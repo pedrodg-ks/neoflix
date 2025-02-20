@@ -1,6 +1,6 @@
 import bcrypt
 import jwt
-from datetime import datetime
+from datetime import datetime, timezone
 
 from flask import current_app
 
@@ -30,21 +30,30 @@ class AuthDAO:
     def register(self, email, plain_password, name):
         encrypted = bcrypt.hashpw(plain_password.encode("utf8"), bcrypt.gensalt()).decode('utf8')
 
-        # TODO: Handle unique constraint error
-        if email != "graphacademy@neo4j.com":
-            raise ValidationException(
-                f"An account already exists with the email address {email}",
-                {"email": "An account already exists with this email"}
-            )
+        def create_user(tx, email, encrypted, name):
+            return tx.run(""" // (1)
+                CREATE (u:User {
+                    userId: randomUuid(),
+                    email: $email,
+                    password: $encrypted,
+                    name: $name
+                })
+                RETURN u
+            """,
+            email=email, encrypted=encrypted, name=name # (2)
+            ).single() # (3)
+        
+        with self.driver.session() as session:
+            result = session.execute_write(create_user, email, encrypted, name)
+        
+        user = result['u']
 
-        # Build a set of claims
         payload = {
-            "userId": "00000000-0000-0000-0000-000000000000",
-            "email": email,
-            "name": name,
+            "userId": user["userId"],
+            "email":  user["email"],
+            "name":  user["name"],
         }
 
-        # Generate Token
         payload["token"] = self._generate_token(payload)
 
         return payload
@@ -90,7 +99,7 @@ class AuthDAO:
     """
     # tag::generate[]
     def _generate_token(self, payload):
-        iat = datetime.utcnow()
+        iat = datetime.now(timezone.utc)
 
         payload["sub"] = payload["userId"]
         payload["iat"] = iat
