@@ -43,20 +43,26 @@ class AuthDAO:
             email=email, encrypted=encrypted, name=name # (2)
             ).single() # (3)
         
-        with self.driver.session() as session:
-            result = session.execute_write(create_user, email, encrypted, name)
-        
-        user = result['u']
+        try:
+            with self.driver.session() as session:
+                result = session.execute_write(create_user, email, encrypted, name)
+            
+            user = result['u']
 
-        payload = {
-            "userId": user["userId"],
-            "email":  user["email"],
-            "name":  user["name"],
-        }
+            payload = {
+                "userId": user["userId"],
+                "email":  user["email"],
+                "name":  user["name"],
+            }
 
-        payload["token"] = self._generate_token(payload)
+            payload["token"] = self._generate_token(payload)
 
-        return payload
+            return payload
+        except ConstraintError as err:
+            # Pass error details through to a ValidationException
+            raise ValidationException(err.message, {
+                "email": err.message
+            })
     # end::register[]
 
     """
